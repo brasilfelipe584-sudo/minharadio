@@ -1,11 +1,11 @@
 import { db } from "@/lib/db";
 import Link from "next/link";
-import Image from "next/image";
 import {
   Radio, Newspaper, Calendar, Gift, Podcast, Video,
   MessageSquare, Search, Heart, History, Bell, User,
   ChevronRight, Clock, Sparkles, Play, Mic2, TrendingUp,
 } from "lucide-react";
+import { ProgramaAtualCard } from "./programa-atual-card";
 
 export const dynamic = "force-dynamic";
 
@@ -30,30 +30,10 @@ export default async function AppHomePage() {
       orderBy: { startTime: "asc" },
     });
 
-    // Determina qual está AO VIVO baseado no horário atual (São Paulo)
-    const now = new Date();
-    const spTime = new Intl.DateTimeFormat("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(now);
-    const [hNow, mNow] = spTime.split(":").map(Number);
-    const currentMin = hNow * 60 + mNow;
-
-    const toMin = (t: string) => {
-      const [h, m] = t.split(":").map(Number);
-      return h * 60 + m;
-    };
-
-    programaAtual = todosProgramasHoje.find((p) => {
-      const start = toMin(p.startTime);
-      let end = toMin(p.endTime);
-      if (p.endTime === "23:59") end = 1440;
-      return currentMin >= start && currentMin < end;
-    }) || todosProgramasHoje[0] || null;
-
-    programasHoje = todosProgramasHoje.slice(0, 6);
+    // Passa TODOS os programas para o componente client que vai calcular qual está ao vivo
+    programaAtual = todosProgramasHoje[0] || null;
+    // Mantém todos para o card atualizar dinamicamente
+    programasHoje = todosProgramasHoje;
 
     [musicas, categorias, noticias, promocoes, config] = await Promise.all([
       db.musica.findMany({ orderBy: { playedAt: "desc" }, take: 6 }),
@@ -133,30 +113,8 @@ export default async function AppHomePage() {
           </div>
         </section>
 
-        {/* Programa atual */}
-        {programaAtual && (
-          <section className="glass rounded-3xl p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] uppercase tracking-widest text-[#E30613] font-bold">
-                  Programa Atual
-                </p>
-                <h3 className="mt-1 truncate text-lg font-bold text-white">{programaAtual.title}</h3>
-                <p className="truncate text-sm text-white/60">
-                  <Clock className="mr-1 inline h-3 w-3" />
-                  {programaAtual.startTime} - {programaAtual.endTime}
-                  {programaAtual.locutor && ` • ${programaAtual.locutor.name}`}
-                </p>
-              </div>
-              <Link
-                href="/app/programacao"
-                className="shrink-0 rounded-full border border-[#E30613]/50 bg-[#E30613]/10 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#E30613] hover:bg-[#E30613]/20 transition"
-              >
-                Ver Programação
-              </Link>
-            </div>
-          </section>
-        )}
+        {/* Programa atual — componente client que atualiza sozinho */}
+        <ProgramaAtualCard programas={JSON.parse(JSON.stringify(programasHoje.length > 0 ? programasHoje : []))} />
 
         {/* Atalhos rápidos */}
         <section>
