@@ -45,7 +45,24 @@ export default function LoginPage() {
       if (result?.error) {
         throw new Error("Credenciais inválidas");
       }
-      router.push("/");
+
+      // Busca a sessão para ver o role do usuário e redirecionar adequadamente
+      try {
+        const sessionRes = await fetch("/api/auth/session");
+        const session = await sessionRes.json();
+        const role = session?.user?.role;
+
+        if (role === "ADMIN") {
+          // Admin vai direto pro painel admin
+          router.push("/admin");
+        } else {
+          // Usuário comum vai pro app
+          router.push("/app");
+        }
+      } catch {
+        // Se não conseguir buscar a sessão, vai pro app
+        router.push("/app");
+      }
       router.refresh();
     } catch (e: any) {
       setError(e.message ?? "Erro ao entrar");
@@ -58,7 +75,7 @@ export default function LoginPage() {
     try {
       const result = await signIn("guest", { redirect: false });
       if (result?.error) throw new Error("Erro ao entrar como visitante");
-      router.push("/");
+      router.push("/app");
       router.refresh();
     } catch (e: any) {
       setError(e.message);
