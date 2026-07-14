@@ -1,0 +1,299 @@
+// Flash Mix Digital — Prisma Schema
+// Sandbox: SQLite (file:./db/custom.db)
+// Production (Vercel + Neon.tech): troque `provider = "sqlite"` por `provider = "postgresql"`
+// e defina DATABASE_URL=postgres://... no painel do Vercel usando sua connection string do Neon.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// AUTH (NextAuth.js)
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  role          String    @default("USER") // USER | ADMIN | GUEST
+  city          String?
+  state         String?
+  avatarUrl     String?
+  isGuest       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  favorites     Favorite[]
+  history       History[]
+  recados       Recado[]
+  notifications Notification[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────────────────────────────────────────────
+// CONTEÚDO
+// ─────────────────────────────────────────────────────────────
+
+model Locutor {
+  id          String   @id @default(cuid())
+  name        String
+  bio         String?
+  avatarUrl   String?
+  instagram   String?
+  facebook    String?
+  whatsapp    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  programas   Programa[]
+}
+
+model Programa {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  imageUrl    String?
+  dayOfWeek   Int      // 0 = domingo, 6 = sábado
+  startTime   String   // "09:00"
+  endTime     String   // "12:00"
+  isLive      Boolean  @default(false)
+  locutorId   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  locutor     Locutor? @relation(fields: [locutorId], references: [id])
+  favorites   Favorite[] @relation("FavPrograma")
+  history     History[]  @relation("HistPrograma")
+}
+
+model Musica {
+  id          String   @id @default(cuid())
+  title       String
+  artist      String
+  album       String?
+  coverUrl    String?
+  duration    Int?     // segundos
+  category    String?  // Pop, Rock, Forró, etc.
+  isPlaying   Boolean  @default(false) // está tocando agora
+  playedAt    DateTime @default(now()) // última vez tocada
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  favorites   Favorite[] @relation("FavMusica")
+  history     History[]  @relation("HistMusica")
+}
+
+model Noticia {
+  id          String   @id @default(cuid())
+  title       String
+  summary     String
+  content     String
+  imageUrl    String?
+  category    String   @default("Geral")
+  isFeatured  Boolean  @default(false)
+  views       Int      @default(0)
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  favorites   Favorite[] @relation("FavNoticia")
+}
+
+model Podcast {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  imageUrl    String?
+  audioUrl    String?
+  duration    Int?
+  category    String?
+  episode     Int?
+  season      Int?
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  favorites   Favorite[] @relation("FavPodcast")
+  history     History[]  @relation("HistPodcast")
+}
+
+model Promocao {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  rules       String?  // regulamento
+  imageUrl    String?
+  prize       String?
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  isActive    Boolean  @default(true)
+  participants Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  favorites   Favorite[] @relation("FavPromocao")
+}
+
+model Video {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  youtubeId   String
+  thumbnailUrl String?
+  duration    Int?
+  views       Int      @default(0)
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  favorites   Favorite[] @relation("FavVideo")
+  history     History[]  @relation("HistVideo")
+}
+
+model Banner {
+  id          String   @id @default(cuid())
+  title       String
+  subtitle    String?
+  imageUrl    String?
+  linkUrl     String?
+  position    String   @default("home") // home, radio, noticias...
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Categoria {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  iconUrl     String?
+  iconName    String?  // nome do ícone lucide
+  color       String?  // cor de destaque
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────
+// INTERAÇÃO DO USUÁRIO
+// ─────────────────────────────────────────────────────────────
+
+model Recado {
+  id        String   @id @default(cuid())
+  userId    String?
+  userName  String
+  city      String?
+  message   String
+  status    String   @default("PENDING") // PENDING | READ | ANSWERED
+  isPublic  Boolean  @default(true)
+  answer    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model Favorite {
+  id          String   @id @default(cuid())
+  userId      String
+  contentType String   // MUSICA | NOTICIA | PODCAST | PROGRAMA | PROMOCAO | VIDEO
+  contentId   String
+  createdAt   DateTime @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  programa    Programa? @relation("FavPrograma", fields: [contentId], references: [id], onDelete: Cascade, map: "fav_programa_fk")
+  musica      Musica?   @relation("FavMusica", fields: [contentId], references: [id], onDelete: Cascade, map: "fav_musica_fk")
+  noticia     Noticia?  @relation("FavNoticia", fields: [contentId], references: [id], onDelete: Cascade, map: "fav_noticia_fk")
+  podcast     Podcast?  @relation("FavPodcast", fields: [contentId], references: [id], onDelete: Cascade, map: "fav_podcast_fk")
+  video       Video?    @relation("FavVideo", fields: [contentId], references: [id], onDelete: Cascade, map: "fav_video_fk")
+  promocao    Promocao? @relation("FavPromocao", fields: [contentId], references: [id], onDelete: Cascade, map: "fav_promocao_fk")
+
+  @@unique([userId, contentType, contentId])
+}
+
+model History {
+  id          String   @id @default(cuid())
+  userId      String
+  contentType String   // MUSICA | PODCAST | VIDEO | PROGRAMA
+  contentId   String
+  playedAt    DateTime @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  programa    Programa? @relation("HistPrograma", fields: [contentId], references: [id], onDelete: Cascade, map: "hist_programa_fk")
+  musica      Musica?   @relation("HistMusica", fields: [contentId], references: [id], onDelete: Cascade, map: "hist_musica_fk")
+  podcast     Podcast?  @relation("HistPodcast", fields: [contentId], references: [id], onDelete: Cascade, map: "hist_podcast_fk")
+  video       Video?    @relation("HistVideo", fields: [contentId], references: [id], onDelete: Cascade, map: "hist_video_fk")
+
+  @@index([userId, playedAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  title     String
+  message   String
+  type      String   @default("INFO") // INFO | MUSICA | PROMO | PROGRAMA | NOTICIA
+  linkUrl   String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// CONFIGURAÇÃO DA RÁDIO
+// ─────────────────────────────────────────────────────────────
+
+model RadioConfig {
+  id            String   @id @default(cuid())
+  streamUrl     String
+  streamName    String   @default("Flash Mix Digital")
+  nowPlayingTitle    String?
+  nowPlayingArtist   String?
+  isLive        Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+}
