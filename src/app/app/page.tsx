@@ -7,7 +7,8 @@ import {
   ChevronRight, Clock, Sparkles, Play, Mic2, TrendingUp,
 } from "lucide-react";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
+
 
 export default async function AppHomePage() {
   const today = new Date().getDay();

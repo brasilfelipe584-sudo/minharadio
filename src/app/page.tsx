@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
 import { LandingClient } from "./landing-client";
 
+export const dynamic = "force-dynamic";
+
 // ISR 60s
-export const revalidate = 60;
 
 export default async function LandingPage() {
   let programaAtual: any = null;
