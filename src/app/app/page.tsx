@@ -9,11 +9,37 @@ import { ProgramaAtualCard } from "./programa-atual-card";
 
 export const dynamic = "force-dynamic";
 
+// Função para converter "HH:MM" em minutos
+function timeToMinutes(time: string): number {
+  if (!time) return 0;
+  const parts = time.split(":");
+  if (parts.length < 2) return 0;
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
+
+// Pega minutos atuais em São Paulo
+function getCurrentMinutesSP(): number {
+  try {
+    const now = new Date();
+    const spTime = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(now);
+    const [h, m] = spTime.split(":").map(Number);
+    return h * 60 + m;
+  } catch {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  }
+}
 
 export default async function AppHomePage() {
   const today = new Date().getDay();
   const DIAS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
+  // Variáveis com defaults seguros
   let programaAtual: any = null;
   let musicas: any[] = [];
   let categorias: any[] = [];
@@ -21,44 +47,73 @@ export default async function AppHomePage() {
   let promocoes: any[] = [];
   let programasHoje: any[] = [];
   let config: any = null;
+  let debugError: string | null = null;
 
+  // Tenta buscar dados do banco com try/catch robusto
   try {
-    // Busca TODOS os programas de hoje
     const todosProgramasHoje = await db.programa.findMany({
       where: { dayOfWeek: today },
       include: { locutor: true },
       orderBy: { startTime: "asc" },
     });
 
-    // Passa TODOS os programas para o componente client que vai calcular qual está ao vivo
-    programaAtual = todosProgramasHoje[0] || null;
-    // Mantém todos para o card atualizar dinamicamente
+    // Determina programa atual baseado no horário
+    const currentMin = getCurrentMinutesSP();
+    programaAtual = todosProgramasHoje.find((p) => {
+      const start = timeToMinutes(p.startTime);
+      let end = timeToMinutes(p.endTime);
+      if (p.endTime === "23:59") end = 1440;
+      return currentMin >= start && currentMin < end;
+    }) || todosProgramasHoje[0] || null;
+
     programasHoje = todosProgramasHoje;
 
-    [musicas, categorias, noticias, promocoes, config] = await Promise.all([
-      db.musica.findMany({ orderBy: { playedAt: "desc" }, take: 6 }),
-      db.categoria.findMany({ orderBy: { order: "asc" } }),
-      db.noticia.findMany({ orderBy: { publishedAt: "desc" }, take: 3 }),
-      db.promocao.findMany({ where: { isActive: true }, take: 3, orderBy: { endDate: "asc" } }),
-      db.radioConfig.findFirst(),
+    // Busca dados restantes em paralelo
+    const [musicasData, categoriasData, noticiasData, promocoesData, configData] = await Promise.all([
+      db.musica.findMany({ orderBy: { playedAt: "desc" }, take: 6 }).catch(() => []),
+      db.categoria.findMany({ orderBy: { order: "asc" } }).catch(() => []),
+      db.noticia.findMany({ orderBy: { publishedAt: "desc" }, take: 3 }).catch(() => []),
+      db.promocao.findMany({ where: { isActive: true }, take: 3, orderBy: { endDate: "asc" } }).catch(() => []),
+      db.radioConfig.findFirst().catch(() => null),
     ]);
-  } catch (e) {}
+
+    musicas = musicasData;
+    categorias = categoriasData;
+    noticias = noticiasData;
+    promocoes = promocoesData;
+    config = configData;
+  } catch (e: any) {
+    debugError = e?.message || String(e);
+    console.error("Erro ao carregar /app:", e);
+  }
 
   const streamUrl = config?.streamUrl || "http://s02.taaqui.org:8874/stream";
+  const nowPlayingTitle = config?.nowPlayingTitle || "Flash Mix Digital - Ao Vivo";
+  const nowPlayingArtist = config?.nowPlayingArtist || "Campo Grande / MS";
 
   const fmtTime = (iso: string) => {
-    const d = new Date(iso);
-    // Usa getTime() com fuso UTC para garantir consistência SSR vs cliente
-    const now = new Date();
-    const diff = now.getTime() - d.getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 1) return "Agora";
-    if (m < 60) return `${m} min atrás`;
-    return `${Math.floor(m / 60)}h atrás`;
+    try {
+      const d = new Date(iso);
+      const now = new Date();
+      const diff = now.getTime() - d.getTime();
+      const m = Math.floor(diff / 60000);
+      if (m < 1) return "Agora";
+      if (m < 60) return `${m} min atrás`;
+      return `${Math.floor(m / 60)}h atrás`;
+    } catch {
+      return "";
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#090909] text-white">
+      {/* DEBUG: mostra erro se houver */}
+      {debugError && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-red-600 text-white p-4 text-sm">
+          <strong>DEBUG ERROR:</strong> {debugError}
+        </div>
+      )}
+
       {/* HEADER fixo */}
       <header className="sticky top-0 z-40 glass-dark border-b border-white/5">
         <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
@@ -90,16 +145,16 @@ export default async function AppHomePage() {
               <div className="relative shrink-0">
                 <div className="pointer-events-none absolute -inset-1 rounded-full border-2 border-[#E30613]/60 animate-glow-pulse" />
                 <div className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-[#E30613]/60 bg-gradient-to-br from-[#0B1836] to-[#2a0408] grid place-items-center p-2">
-                  <Image src="/logo/flashmix-logo.png" alt="Flash Mix" width={36} height={25} className="object-contain animate-spin-slower" />
+                  <img src="/logo/flashmix-logo.png" alt="Flash Mix" className="object-contain animate-spin-slower w-9 h-6" />
                 </div>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] uppercase tracking-widest text-[#E30613] font-bold">No Ar</p>
                 <h2 className="truncate text-lg font-bold text-white">
-                  {config?.nowPlayingTitle || "Flash Mix Digital - Ao Vivo"}
+                  {nowPlayingTitle}
                 </h2>
                 <p className="truncate text-sm text-white/70">
-                  {config?.nowPlayingArtist || "Campo Grande / MS"}
+                  {nowPlayingArtist}
                 </p>
               </div>
               <a
@@ -114,7 +169,7 @@ export default async function AppHomePage() {
         </section>
 
         {/* Programa atual — componente client que atualiza sozinho */}
-        <ProgramaAtualCard programas={JSON.parse(JSON.stringify(programasHoje.length > 0 ? programasHoje : []))} />
+        <ProgramaAtualCard programas={JSON.parse(JSON.stringify(programasHoje || []))} />
 
         {/* Atalhos rápidos */}
         <section>
@@ -145,8 +200,8 @@ export default async function AppHomePage() {
           </div>
         </section>
 
-        {/* Programação de hoje */}
-        {programasHoje.length > 0 && (
+        {/* Programação de hoje (preview) */}
+        {programasHoje && programasHoje.length > 0 && (
           <section>
             <div className="mb-3 flex items-center justify-between px-1">
               <h3 className="text-base font-bold uppercase tracking-wide text-white">
@@ -157,7 +212,7 @@ export default async function AppHomePage() {
               </Link>
             </div>
             <div className="space-y-2">
-              {programasHoje.map((p, i) => (
+              {programasHoje.slice(0, 6).map((p, i) => (
                 <div key={p.id} className={`glass rounded-2xl p-3 ${i === 0 ? "border-[#E30613]/60" : ""}`}>
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-bold text-[#E30613] w-12">{p.startTime}</span>
@@ -178,7 +233,7 @@ export default async function AppHomePage() {
         )}
 
         {/* Últimas tocadas */}
-        {musicas.length > 0 && (
+        {musicas && musicas.length > 0 && (
           <section>
             <div className="mb-3 flex items-center justify-between px-1">
               <h3 className="text-base font-bold uppercase tracking-wide text-white">Últimas Tocadas</h3>
@@ -208,7 +263,7 @@ export default async function AppHomePage() {
         )}
 
         {/* Promoções */}
-        {promocoes.length > 0 && (
+        {promocoes && promocoes.length > 0 && (
           <section>
             <div className="mb-3 flex items-center justify-between px-1">
               <h3 className="text-base font-bold uppercase tracking-wide text-white">Promoções</h3>
@@ -239,7 +294,7 @@ export default async function AppHomePage() {
         )}
 
         {/* Notícias */}
-        {noticias.length > 0 && (
+        {noticias && noticias.length > 0 && (
           <section>
             <div className="mb-3 flex items-center justify-between px-1">
               <h3 className="text-base font-bold uppercase tracking-wide text-white">Notícias</h3>
@@ -279,6 +334,13 @@ export default async function AppHomePage() {
             Ver Top 10
           </Link>
         </section>
+
+        {/* DEBUG: mostra info de debug no final */}
+        <div className="text-center text-[10px] text-white/30 pt-4">
+          <p>DEBUG: {programasHoje?.length || 0} programas hoje | {musicas?.length || 0} músicas | {noticias?.length || 0} notícias</p>
+          {config && <p>Config OK</p>}
+          {!config && <p>Sem config — usando defaults</p>}
+        </div>
       </main>
 
       {/* BOTTOM NAV */}
