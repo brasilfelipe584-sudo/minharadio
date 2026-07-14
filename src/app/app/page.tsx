@@ -82,8 +82,8 @@ export default async function AppHomePage() {
       {/* HEADER fixo */}
       <header className="sticky top-0 z-40 glass-dark border-b border-white/5">
         <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
-          <Link href="/" className="text-sm text-white/60 hover:text-white">← Rádio</Link>
-          <Image src="/logo/flashmix-logo.png" alt="Flash Mix" width={100} height={68} className="h-7 w-auto object-contain" />
+          <div className="w-16" />
+          <img src="/logo/flashmix-logo.png" alt="Flash Mix" className="h-7 w-auto object-contain" />
           <Link href="/login" className="text-sm text-[#E30613] font-medium hover:text-white">Entrar</Link>
         </div>
       </header>
