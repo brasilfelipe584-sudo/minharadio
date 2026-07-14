@@ -1,9 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import Image from "next/image";
-import { Mic2, Clock, Calendar, User } from "lucide-react";
-import { useState } from "react";
+import { Mic2, Clock, Calendar, User, Radio } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 
 type Programa = {
   id: string; title: string; description?: string | null;
@@ -11,6 +10,62 @@ type Programa = {
   locutor?: { name: string; avatarUrl?: string | null; instagram?: string | null } | null;
 };
 type Locutor = { id: string; name: string; avatarUrl?: string | null; bio?: string | null };
+
+// Converte "HH:MM" para minutos desde meia-noite (timezone São Paulo)
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// Pega hora atual em São Paulo em minutos
+function getCurrentMinutesSP(): number {
+  const now = new Date();
+  // Formata para São Paulo (UTC-3)
+  const spTime = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+  const [h, m] = spTime.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// Verifica se um programa está ao vivo agora
+function isProgramLive(p: Programa): boolean {
+  const current = getCurrentMinutesSP();
+  const start = timeToMinutes(p.startTime);
+  // Tratamento para programas que terminam à meia-noite (23:59 → 24:00 = 1440)
+  let end = timeToMinutes(p.endTime);
+  if (p.endTime === "23:59") end = 1440;
+  if (end <= start) end = 1440; // programa que cruza meia-noite
+  return current >= start && current < end;
+}
+
+// Calcula progresso do programa ao vivo (0-100%)
+function getLiveProgress(p: Programa): number {
+  const current = getCurrentMinutesSP();
+  const start = timeToMinutes(p.startTime);
+  let end = timeToMinutes(p.endTime);
+  if (p.endTime === "23:59") end = 1440;
+  if (end <= start) end = 1440;
+  const total = end - start;
+  const elapsed = current - start;
+  return Math.min(100, Math.max(0, (elapsed / total) * 100));
+}
+
+// Tempo restante formatado
+function getRemainingTime(p: Programa): string {
+  const current = getCurrentMinutesSP();
+  let end = timeToMinutes(p.endTime);
+  if (p.endTime === "23:59") end = 1440;
+  const remaining = end - current;
+  if (remaining <= 0) return "Encerrado";
+  const h = Math.floor(remaining / 60);
+  const m = remaining % 60;
+  if (h > 0) return `Termina em ${h}h${m.toString().padStart(2, "0")}min`;
+  return `Termina em ${m}min`;
+}
 
 export function ProgramacaoContent({
   programas, locutores, diaAtual, dias,
@@ -22,13 +77,110 @@ export function ProgramacaoContent({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<"hoje" | "semana" | "locutores">("hoje");
+  const [currentTime, setCurrentTime] = useState<string>("");
+  const liveRef = useRef<HTMLDivElement>(null);
+  const hasScrolled = useRef(false);
+
+  // Atualiza o horário a cada 30 segundos
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const spTime = new Intl.DateTimeFormat("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(now);
+      setCurrentTime(spTime);
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-scroll para o programa ao vivo
+  useEffect(() => {
+    if (hasScrolled.current) return;
+    if (tab !== "hoje" && tab !== "semana") return;
+    const liveProgram = programas.find((p) => isProgramLive(p));
+    if (liveProgram && liveRef.current) {
+      setTimeout(() => {
+        liveRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+        hasScrolled.current = true;
+      }, 500);
+    }
+  }, [programas, tab]);
+
+  const isToday = diaAtual === new Date().getDay();
+  const liveProgram = isToday ? programas.find((p) => isProgramLive(p)) : null;
 
   return (
     <div className="space-y-5">
       <header>
         <h1 className="text-2xl font-bold text-white">Programação</h1>
-        <p className="text-sm text-white/60">Confira a grade completa da Flash Mix Digital</p>
+        <div className="flex items-center gap-2 mt-1">
+          <p className="text-sm text-white/60">Confira a grade completa da Flash Mix Digital</p>
+          {currentTime && (
+            <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white">
+              <Clock className="h-3 w-3 text-[#E30613]" />
+              {currentTime}
+            </span>
+          )}
+        </div>
       </header>
+
+      {/* Card AO VIVO agora (se hoje) */}
+      {liveProgram && (tab === "hoje" || tab === "semana") && (
+        <div className="glass-red rounded-3xl p-4 relative overflow-hidden">
+          <div className="absolute inset-0 opacity-20" style={{
+            background: "radial-gradient(circle at 30% 50%, rgba(227,6,19,0.5) 0%, transparent 70%)"
+          }} />
+          <div className="relative">
+            <div className="flex items-center justify-between mb-3">
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#E30613] px-3 py-1 text-xs font-bold uppercase tracking-wider text-white glow-red">
+                <span className="h-2 w-2 animate-pulse-live rounded-full bg-white" />
+                Ao Vivo Agora
+              </div>
+              <span className="text-xs text-white/60">{getRemainingTime(liveProgram)}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-[#E30613]/60">
+                {liveProgram.imageUrl ? (
+                  <img src={liveProgram.imageUrl} alt={liveProgram.title} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="grid h-full w-full place-items-center bg-gradient-to-br from-[#0B1836] to-[#2a0408] text-[#E30613]">
+                    <Radio className="h-6 w-6" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-white truncate">{liveProgram.title}</h3>
+                {liveProgram.locutor && (
+                  <p className="text-xs text-white/60 truncate">com {liveProgram.locutor.name}</p>
+                )}
+                <p className="text-xs font-medium text-[#E30613]">
+                  {liveProgram.startTime} - {liveProgram.endTime}
+                </p>
+              </div>
+            </div>
+            {/* Barra de progresso */}
+            <div className="mt-3">
+              <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full bg-[#E30613] glow-red transition-all duration-1000"
+                  style={{ width: `${getLiveProgress(liveProgram)}%` }}
+                />
+              </div>
+              <p className="mt-1 text-right text-[10px] text-white/40">
+                {Math.round(getLiveProgress(liveProgram))}% concluído
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex rounded-full bg-white/5 p-1">
@@ -76,7 +228,6 @@ export function ProgramacaoContent({
             <div key={l.id} className="glass flex flex-col items-center gap-2 rounded-2xl p-4 text-center">
               <div className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-[#E30613]/40">
                 {l.avatarUrl ? (
-                   
                   <img src={l.avatarUrl} alt={l.name} className="h-full w-full object-cover" />
                 ) : (
                   <div className="grid h-full w-full place-items-center bg-gradient-to-br from-[#0B1836] to-[#2a0408] text-[#E30613]">
@@ -94,47 +245,81 @@ export function ProgramacaoContent({
           {programas.length === 0 ? (
             <p className="py-12 text-center text-sm text-white/50">Nenhum programa para este dia.</p>
           ) : (
-            programas.map((p) => (
-              <div
-                key={p.id}
-                className={`relative overflow-hidden rounded-2xl glass p-4 transition ${
-                  p.isLive ? "border-[#E30613]/60 glow-red" : ""
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-white/10">
-                    {p.imageUrl ? (
-                       
-                      <img src={p.imageUrl} alt={p.title} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="grid h-full w-full place-items-center bg-gradient-to-br from-[#0B1836] to-[#2a0408] text-[#E30613]">
-                        <Mic2 className="h-6 w-6" />
-                      </div>
-                    )}
-                    {p.isLive && (
-                      <div className="absolute inset-0 grid place-items-center bg-[#E30613]/40">
-                        <span className="rounded-full bg-[#E30613] px-2 py-0.5 text-[9px] font-bold uppercase text-white">
-                          Ao Vivo
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-bold text-white">{p.title}</h3>
-                    {p.locutor && (
-                      <p className="text-xs text-white/60">com {p.locutor.name}</p>
-                    )}
-                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-[#E30613]">
-                      <Clock className="h-3 w-3" />
-                      {p.startTime} - {p.endTime}
-                    </p>
-                    {p.description && (
-                      <p className="mt-1 line-clamp-2 text-xs text-white/60">{p.description}</p>
-                    )}
+            programas.map((p) => {
+              const live = isToday && isProgramLive(p);
+              const isPast = isToday && timeToMinutes(p.endTime) < getCurrentMinutesSP() && !live;
+              const isUpcoming = isToday && timeToMinutes(p.startTime) > getCurrentMinutesSP();
+              return (
+                <div
+                  key={p.id}
+                  ref={live ? liveRef : null}
+                  className={`relative overflow-hidden rounded-2xl glass p-4 transition ${
+                    live ? "border-[#E30613]/60 glow-red" : isPast ? "opacity-50" : ""
+                  }`}
+                >
+                  {live && (
+                    <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
+                      background: "linear-gradient(135deg, rgba(227,6,19,0.3) 0%, transparent 50%)"
+                    }} />
+                  )}
+                  <div className="relative flex items-start gap-3">
+                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-white/10">
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} alt={p.title} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center bg-gradient-to-br from-[#0B1836] to-[#2a0408] text-[#E30613]">
+                          <Mic2 className="h-6 w-6" />
+                        </div>
+                      )}
+                      {live && (
+                        <div className="absolute inset-0 grid place-items-center bg-[#E30613]/50">
+                          <span className="rounded-full bg-[#E30613] px-2 py-0.5 text-[9px] font-bold uppercase text-white glow-red">
+                            <span className="inline-block h-1.5 w-1.5 animate-pulse-live rounded-full bg-white mr-1" />
+                            Ao Vivo
+                          </span>
+                        </div>
+                      )}
+                      {isPast && (
+                        <div className="absolute top-1 right-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white/60">
+                          Encerrado
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-white">{p.title}</h3>
+                      {p.locutor && (
+                        <p className="text-xs text-white/60">com {p.locutor.name}</p>
+                      )}
+                      <p className={`mt-1 flex items-center gap-1 text-xs font-medium ${
+                        live ? "text-[#E30613]" : isPast ? "text-white/40" : "text-white/60"
+                      }`}>
+                        <Clock className="h-3 w-3" />
+                        {p.startTime} - {p.endTime}
+                        {live && <span className="ml-1">• {getRemainingTime(p)}</span>}
+                        {isUpcoming && <span className="ml-1 text-white/40">• Em breve</span>}
+                      </p>
+                      {p.description && (
+                        <p className="mt-1 line-clamp-2 text-xs text-white/60">{p.description}</p>
+                      )}
+                      {/* Barra de progresso para programa ao vivo */}
+                      {live && (
+                        <div className="mt-2">
+                          <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+                            <div
+                              className="h-full bg-[#E30613] glow-red transition-all duration-1000"
+                              style={{ width: `${getLiveProgress(p)}%` }}
+                            />
+                          </div>
+                          <p className="mt-0.5 text-right text-[9px] text-white/40">
+                            {Math.round(getLiveProgress(p))}%
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

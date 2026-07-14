@@ -23,25 +23,43 @@ export default async function AppHomePage() {
   let config: any = null;
 
   try {
-    [programaAtual, musicas, categorias, noticias, promocoes, programasHoje, config] = await Promise.all([
-      db.programa.findFirst({
-        where: { isLive: true },
-        include: { locutor: true },
-      }) ?? db.programa.findFirst({
-        where: { dayOfWeek: today },
-        orderBy: { startTime: "asc" },
-        include: { locutor: true },
-      }),
+    // Busca TODOS os programas de hoje
+    const todosProgramasHoje = await db.programa.findMany({
+      where: { dayOfWeek: today },
+      include: { locutor: true },
+      orderBy: { startTime: "asc" },
+    });
+
+    // Determina qual está AO VIVO baseado no horário atual (São Paulo)
+    const now = new Date();
+    const spTime = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(now);
+    const [hNow, mNow] = spTime.split(":").map(Number);
+    const currentMin = hNow * 60 + mNow;
+
+    const toMin = (t: string) => {
+      const [h, m] = t.split(":").map(Number);
+      return h * 60 + m;
+    };
+
+    programaAtual = todosProgramasHoje.find((p) => {
+      const start = toMin(p.startTime);
+      let end = toMin(p.endTime);
+      if (p.endTime === "23:59") end = 1440;
+      return currentMin >= start && currentMin < end;
+    }) || todosProgramasHoje[0] || null;
+
+    programasHoje = todosProgramasHoje.slice(0, 6);
+
+    [musicas, categorias, noticias, promocoes, config] = await Promise.all([
       db.musica.findMany({ orderBy: { playedAt: "desc" }, take: 6 }),
       db.categoria.findMany({ orderBy: { order: "asc" } }),
       db.noticia.findMany({ orderBy: { publishedAt: "desc" }, take: 3 }),
       db.promocao.findMany({ where: { isActive: true }, take: 3, orderBy: { endDate: "asc" } }),
-      db.programa.findMany({
-        where: { dayOfWeek: today },
-        include: { locutor: true },
-        orderBy: { startTime: "asc" },
-        take: 6,
-      }),
       db.radioConfig.findFirst(),
     ]);
   } catch (e) {}
