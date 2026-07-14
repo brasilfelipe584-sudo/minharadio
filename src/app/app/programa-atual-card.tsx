@@ -12,76 +12,52 @@ type Programa = {
   locutor?: { name: string } | null;
 };
 
-type ProgramaComStatus = Programa & {
-  isLive: boolean;
-  isPast: boolean;
-  isUpcoming: boolean;
-  progress: number;
-  remaining: string;
-};
-
 // Converte "HH:MM" para minutos
 function timeToMinutes(time: string): number {
-  const [h, m] = time.split(":").map(Number);
+  if (!time || typeof time !== "string") return 0;
+  const parts = time.split(":");
+  if (parts.length < 2) return 0;
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
   return h * 60 + m;
 }
 
 // Pega hora atual em São Paulo em minutos
 function getCurrentMinutesSP(): number {
-  const now = new Date();
-  const spTime = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(now);
-  const [h, m] = spTime.split(":").map(Number);
-  return h * 60 + m;
-}
-
-// Calcula status de um programa baseado no horário atual
-function getProgramStatus(p: Programa) {
-  const current = getCurrentMinutesSP();
-  const start = timeToMinutes(p.startTime);
-  let end = timeToMinutes(p.endTime);
-  if (p.endTime === "23:59") end = 1440;
-  if (end <= start) end = 1440;
-
-  const isLive = current >= start && current < end;
-  const isPast = current >= end;
-  const isUpcoming = current < start;
-
-  const total = end - start;
-  const elapsed = current - start;
-  const progress = Math.min(100, Math.max(0, (elapsed / total) * 100));
-
-  const remaining = end - current;
-  let remainingText = "";
-  if (remaining > 0 && isLive) {
-    const h = Math.floor(remaining / 60);
-    const m = remaining % 60;
-    if (h > 0) remainingText = `Termina em ${h}h${m.toString().padStart(2, "0")}min`;
-    else remainingText = `Termina em ${m}min`;
+  try {
+    const now = new Date();
+    const spTime = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(now);
+    const [h, m] = spTime.split(":").map(Number);
+    return h * 60 + m;
+  } catch {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
   }
-
-  return { isLive, isPast, isUpcoming, progress, remaining: remainingText };
 }
 
 export function ProgramaAtualCard({ programas }: { programas: Programa[] }) {
   const [tick, setTick] = useState(0);
   const [currentTime, setCurrentTime] = useState("");
+  const [mounted, setMounted] = useState(false);
 
-  // Atualiza a cada 30 segundos (sem recarregar a página)
   useEffect(() => {
+    setMounted(true);
     const update = () => {
-      const now = new Date();
-      const spTime = new Intl.DateTimeFormat("pt-BR", {
-        timeZone: "America/Sao_Paulo",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(now);
-      setCurrentTime(spTime);
+      try {
+        const now = new Date();
+        const spTime = new Intl.DateTimeFormat("pt-BR", {
+          timeZone: "America/Sao_Paulo",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).format(now);
+        setCurrentTime(spTime);
+      } catch {}
       setTick((t) => t + 1);
     };
 
@@ -99,10 +75,59 @@ export function ProgramaAtualCard({ programas }: { programas: Programa[] }) {
     };
   }, []);
 
-  if (!programas || programas.length === 0) return null;
+  // Guard: se não tem programas, não mostra nada
+  if (!programas || !Array.isArray(programas) || programas.length === 0) {
+    return (
+      <section className="glass rounded-3xl p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold">
+              Sem programação disponível
+            </p>
+            <h3 className="mt-1 truncate text-lg font-bold text-white/60">
+              Volte mais tarde! 🎵
+            </h3>
+          </div>
+          <Link
+            href="/app/programacao"
+            className="shrink-0 rounded-full border border-[#E30613]/50 bg-[#E30613]/10 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#E30613] hover:bg-[#E30613]/20 transition"
+          >
+            Ver Programação
+          </Link>
+        </div>
+      </section>
+    );
+  }
 
-  // Encontra o programa ao vivo
-  const programasComStatus = programas.map((p) => ({ ...p, ...getProgramStatus(p) }));
+  // Calcula status de cada programa
+  const current = mounted ? getCurrentMinutesSP() : 0;
+
+  const programasComStatus = programas.map((p) => {
+    const start = timeToMinutes(p.startTime);
+    let end = timeToMinutes(p.endTime);
+    if (p.endTime === "23:59") end = 1440;
+    if (end <= start) end = 1440;
+
+    const isLive = mounted && current >= start && current < end;
+    const isPast = mounted && current >= end;
+    const isUpcoming = mounted && current < start;
+
+    const total = end - start;
+    const elapsed = current - start;
+    const progress = isLive ? Math.min(100, Math.max(0, (elapsed / total) * 100)) : 0;
+
+    const remaining = end - current;
+    let remainingText = "";
+    if (remaining > 0 && isLive) {
+      const h = Math.floor(remaining / 60);
+      const m = remaining % 60;
+      if (h > 0) remainingText = `Termina em ${h}h${m.toString().padStart(2, "0")}min`;
+      else remainingText = `Termina em ${m}min`;
+    }
+
+    return { ...p, isLive, isPast, isUpcoming, progress, remaining: remainingText };
+  });
+
   const programaAtual = programasComStatus.find((p) => p.isLive);
   const proximoPrograma = programasComStatus.find((p) => p.isUpcoming);
 
@@ -110,7 +135,7 @@ export function ProgramaAtualCard({ programas }: { programas: Programa[] }) {
   if (programaAtual) {
     return (
       <section className="glass-red rounded-3xl p-4 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-20" style={{
+        <div className="absolute inset-0 opacity-20 pointer-events-none" style={{
           background: "radial-gradient(circle at 30% 50%, rgba(227,6,19,0.5) 0%, transparent 70%)"
         }} />
         <div className="relative">
@@ -134,7 +159,6 @@ export function ProgramaAtualCard({ programas }: { programas: Programa[] }) {
               <p className="mt-1 text-xs font-medium text-[#E30613]">
                 {programaAtual.remaining}
               </p>
-              {/* Barra de progresso */}
               <div className="mt-2">
                 <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
                   <div
