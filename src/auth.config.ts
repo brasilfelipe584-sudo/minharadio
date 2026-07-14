@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 // Base config (no DB-specific bits) — safe to use in middleware
 export const authConfig: NextAuthConfig = {
   session: { strategy: "jwt" },
+  // trustHost: true — não precisa de NEXTAUTH_URL, usa a URL do request
+  trustHost: true,
   pages: {
     signIn: "/login",
   },

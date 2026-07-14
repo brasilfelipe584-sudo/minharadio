@@ -30,8 +30,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — .env está commitado para deploy funcionar sem configurar nada
+# (não usar .env.local ou .env.production.local)
+.env.local
+.env.*.local
 
 # vercel
 .vercel
@@ -50,8 +52,5 @@ test
 prompt
 
 server.log
-# Skills directory
-/skills/.env
-.env.local
 start-dev.sh
 db/
