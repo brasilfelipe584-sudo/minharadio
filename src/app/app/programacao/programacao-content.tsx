@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Mic2, Clock, Calendar, User, Radio } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 type Programa = {
   id: string; title: string; description?: string | null;
@@ -11,7 +11,7 @@ type Programa = {
 };
 type Locutor = { id: string; name: string; avatarUrl?: string | null; bio?: string | null };
 
-// Converte "HH:MM" para minutos desde meia-noite (timezone São Paulo)
+// Converte "HH:MM" para minutos desde meia-noite
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
@@ -20,7 +20,6 @@ function timeToMinutes(time: string): number {
 // Pega hora atual em São Paulo em minutos
 function getCurrentMinutesSP(): number {
   const now = new Date();
-  // Formata para São Paulo (UTC-3)
   const spTime = new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
     hour: "2-digit",
@@ -31,14 +30,32 @@ function getCurrentMinutesSP(): number {
   return h * 60 + m;
 }
 
+// Pega o dia da semana atual em São Paulo (0=Dom, 6=Sáb)
+function getCurrentDaySP(): number {
+  const now = new Date();
+  const spDay = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "short",
+  }).format(now);
+  const map: Record<string, number> = {
+    "dom": 0, "domingo": 0,
+    "seg": 1, "segunda": 1,
+    "ter": 2, "terça": 2,
+    "qua": 3, "quarta": 3,
+    "qui": 4, "quinta": 4,
+    "sex": 5, "sexta": 5,
+    "sáb": 6, "sabado": 6, "sábado": 6,
+  };
+  return map[spDay.toLowerCase()] ?? new Date().getDay();
+}
+
 // Verifica se um programa está ao vivo agora
 function isProgramLive(p: Programa): boolean {
   const current = getCurrentMinutesSP();
   const start = timeToMinutes(p.startTime);
-  // Tratamento para programas que terminam à meia-noite (23:59 → 24:00 = 1440)
   let end = timeToMinutes(p.endTime);
   if (p.endTime === "23:59") end = 1440;
-  if (end <= start) end = 1440; // programa que cruza meia-noite
+  if (end <= start) end = 1440;
   return current >= start && current < end;
 }
 
@@ -78,12 +95,15 @@ export function ProgramacaoContent({
   const router = useRouter();
   const [tab, setTab] = useState<"hoje" | "semana" | "locutores">("hoje");
   const [currentTime, setCurrentTime] = useState<string>("");
+  const [currentDaySP, setCurrentDaySP] = useState<number>(diaAtual);
+  const [tick, setTick] = useState(0); // força re-render
   const liveRef = useRef<HTMLDivElement>(null);
   const hasScrolled = useRef(false);
 
-  // Atualiza o horário a cada 30 segundos
+  // Atualiza o horário e detecta mudança de dia a cada 30 segundos
+  // Também força re-render para atualizar qual programa está ao vivo
   useEffect(() => {
-    const updateTime = () => {
+    const update = () => {
       const now = new Date();
       const spTime = new Intl.DateTimeFormat("pt-BR", {
         timeZone: "America/Sao_Paulo",
@@ -92,11 +112,39 @@ export function ProgramacaoContent({
         hour12: false,
       }).format(now);
       setCurrentTime(spTime);
+
+      const newDay = getCurrentDaySP();
+      setCurrentDaySP(newDay);
+
+      // Se o dia mudou e estamos na tab "hoje", recarrega a página para pegar os programas do novo dia
+      if (tab === "hoje" && newDay !== diaAtual) {
+        router.refresh();
+        return;
+      }
+
+      // Força re-render para atualizar qual programa está ao vivo
+      setTick(t => t + 1);
     };
-    updateTime();
-    const interval = setInterval(updateTime, 30000);
-    return () => clearInterval(interval);
-  }, []);
+
+    // Atualiza imediatamente
+    update();
+
+    // Atualiza a cada 30 segundos (tempo suficiente para detectar mudança de programa)
+    const interval = setInterval(update, 30000);
+
+    // Também atualiza quando a aba volta a ficar visível
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        update();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [tab, diaAtual, router]);
 
   // Auto-scroll para o programa ao vivo
   useEffect(() => {
@@ -112,9 +160,9 @@ export function ProgramacaoContent({
         hasScrolled.current = true;
       }, 500);
     }
-  }, [programas, tab]);
+  }, [programas, tab, tick]);
 
-  const isToday = diaAtual === new Date().getDay();
+  const isToday = diaAtual === currentDaySP;
   const liveProgram = isToday ? programas.find((p) => isProgramLive(p)) : null;
 
   return (
@@ -253,8 +301,8 @@ export function ProgramacaoContent({
                 <div
                   key={p.id}
                   ref={live ? liveRef : null}
-                  className={`relative overflow-hidden rounded-2xl glass p-4 transition ${
-                    live ? "border-[#E30613]/60 glow-red" : isPast ? "opacity-50" : ""
+                  className={`relative overflow-hidden rounded-2xl glass p-4 transition-all duration-500 ${
+                    live ? "border-[#E30613]/60 glow-red scale-[1.02]" : isPast ? "opacity-50" : ""
                   }`}
                 >
                   {live && (
