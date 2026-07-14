@@ -100,8 +100,8 @@ export function ProgramacaoContent({
   const liveRef = useRef<HTMLDivElement>(null);
   const hasScrolled = useRef(false);
 
-  // Atualiza o horário e detecta mudança de dia a cada 30 segundos
-  // Também força re-render para atualizar qual programa está ao vivo
+  // Atualiza o horário e força re-render (sem recarregar a página) a cada 30 segundos
+  // IMPORTANTE: não usa router.refresh() para não interromper o player de áudio
   useEffect(() => {
     const update = () => {
       const now = new Date();
@@ -112,24 +112,15 @@ export function ProgramacaoContent({
         hour12: false,
       }).format(now);
       setCurrentTime(spTime);
-
-      const newDay = getCurrentDaySP();
-      setCurrentDaySP(newDay);
-
-      // Se o dia mudou e estamos na tab "hoje", recarrega a página para pegar os programas do novo dia
-      if (tab === "hoje" && newDay !== diaAtual) {
-        router.refresh();
-        return;
-      }
-
-      // Força re-render para atualizar qual programa está ao vivo
+      // Força re-render para recalcular qual programa está ao vivo
+      // Isso NÃO recarrega a página, apenas atualiza os componentes
       setTick(t => t + 1);
     };
 
     // Atualiza imediatamente
     update();
 
-    // Atualiza a cada 30 segundos (tempo suficiente para detectar mudança de programa)
+    // Atualiza a cada 30 segundos
     const interval = setInterval(update, 30000);
 
     // Também atualiza quando a aba volta a ficar visível
@@ -144,7 +135,7 @@ export function ProgramacaoContent({
       clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [tab, diaAtual, router]);
+  }, []);
 
   // Auto-scroll para o programa ao vivo
   useEffect(() => {
